@@ -341,7 +341,7 @@ function resize(){
   vw=innerWidth; vh=innerHeight; mobile = vw<=760;
   renderer.setSize(vw, vh, false);
   camera.aspect=vw/vh;
-  const D = mobile ? Math.min(vw*0.56, vh*0.32) : Math.min(vh*0.56, vw*0.34);
+  const D = mobile ? Math.min(vw*0.64, vh*0.36) : Math.min(vh*0.56, vw*0.34);
   ppu = D/2;
   const tanH=Math.tan(THREE.MathUtils.degToRad(camera.fov/2));
   camera.position.set(0,0, vh/(2*ppu*tanH));
@@ -362,19 +362,19 @@ const tmpQ=new THREE.Quaternion(), spinQ=new THREE.Quaternion(), rollQ=new THREE
 const ease = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
 
 function wrapD(i){ let d=((i-pos)%N+N)%N; if(d>N/2) d-=N; return d; }
-const ARC=1.3;
+const ARC=1.62;
 const gapW = () => mobile ? ARC : G;
 function curve(d){
   if(mobile){
     const x=ARC*d;
-    return { x, y:-1.3*x*x, s:0.62+0.38*Math.exp(-d*d*0.9), z:-Math.abs(d)*0.3 };
+    return { x, y:-0.24*x*x, s:0.6+0.4*Math.exp(-d*d*0.9), z:-Math.abs(d)*0.3 };
   }
   const k=Math.pow(GROW,d), x=G*(k-1)/Math.log(GROW);
   return { x, y: 0.2*x + 0.045*x*x, s:k };
 }
 
 function layout(dt){
-  const yOff = mobile ? toWorld(0, vh*0.46)[1] : toWorld(0, vh*0.5)[1];
+  const yOff = mobile ? toWorld(0, vh*0.44)[1] : toWorld(0, vh*0.5)[1];
   const e = ease(openT);
   let [dx, dy] = mobile ? toWorld(vw*0.5, vh*0.2) : toWorld(Math.min(vw*0.25, vw - Math.min(vw*0.54,760) - 180), vh*0.5);
   let dScale = mobile ? 0.62 : 0.9;
