@@ -358,7 +358,7 @@ function layout(dt){
   const e = ease(openT);
   let [dx, dy] = mobile ? toWorld(vw*0.5, vh*0.2) : toWorld(Math.min(vw*0.25, vw - Math.min(vw*0.54,760) - 180), vh*0.5);
   let dScale = mobile ? 0.62 : 0.9;
-  if(mobile){ const sl=document.getElementById("dDisc"); if(sl){ const r=sl.getBoundingClientRect(); if(r.width>0){ [dx,dy]=toWorld(r.left+r.width/2, r.top+r.height/2); dScale=(r.width/2)/ppu; } } }
+  if(mobile){ const sl=document.getElementById("dDisc"); if(sl){ const r=sl.getBoundingClientRect(); if(r.width>0){ [dx,dy]=toWorld(r.left+r.width/2-curTx, r.top+r.height/2); dScale=(r.width/2)/ppu; } } }
   const dyn = Math.max(-0.35, Math.min(0.35, -tilt*6));
   for(let i=0;i<N;i++){
     const disc=discs[i], d=wrapD(i), ad=Math.abs(d);
@@ -370,6 +370,7 @@ function layout(dt){
     const isA = i===active;
     if(isA){
       x = x+(dx-x)*e; y = y+(dy-y)*e; s = s+(dScale-s)*e; z = z+(0.4-z)*e;
+      x += activeSlide*e;
     } else if(e>0){
       x *= 1+e*1.4; y += (d>0? 1.5:-1.2)*e; s *= mobile ? Math.max(0.001,1-e) : 1-e*0.5;
     }
@@ -383,12 +384,22 @@ function layout(dt){
       tmpQ.slerp(faceQ, e);
       eu.set(sp.x, sp.y, 0, "XYZ"); spinQ.setFromEuler(eu); tmpQ.premultiply(spinQ);
       disc.spin = open && !reduce ? disc.spin + dt*0.35 : disc.spin*(1-Math.min(1,dt*4));
+      disc.spin -= (activeSlide-lastAS)/Math.max(0.15,s);
       rollQ.setFromAxisAngle(new THREE.Vector3(0,0,1), disc.spin); tmpQ.multiply(rollQ);
     }
     disc.inner.quaternion.copy(tmpQ);
+    if(i===outIdx && !isA){
+      disc.outer.visible=true;
+      disc.outer.position.set(outBase.x+outOff, outBase.y, outBase.z);
+      disc.outer.scale.setScalar(outBase.s);
+      disc.spin -= (outOff-lastOut)/Math.max(0.15,outBase.s);
+      rollQ.setFromAxisAngle(ZAX, disc.spin); tmpQ.copy(faceQ).multiply(rollQ); disc.inner.quaternion.copy(tmpQ);
+      disc.shadow.visible=false; continue;
+    }
     disc.shadow.material.opacity = 1;
     disc.shadow.visible = !(isA && e>0.5);
   }
+  lastAS=activeSlide; lastOut=outOff;
 }
 
 /* ---------- UI text ---------- */
@@ -440,11 +451,72 @@ function closeProject(){
   open=false; document.body.classList.remove("detail-open");
   try{ history.replaceState(null,"",location.pathname+location.search); }catch(_){}
 }
+/* swipe between projects */
+let dragX=0, hDrag=false, animating=false, activeSlide=0, lastAS=0, outIdx=-1, outOff=0, outOffT=0, lastOut=0, curTx=0;
+const outBase={x:0,y:0,z:0,s:1}, ZAX=new THREE.Vector3(0,0,1);
+const dIn=$("detailIn"), det=$("detail");
+function setContent(x, trans){ dIn.style.transition = trans||"none"; dIn.style.transform = x ? `translateX(${x.toFixed(1)}px)` : ""; dIn.style.opacity = String(1 - Math.min(0.6, Math.abs(x)/Math.max(320,vw)*0.9)); }
+const SPRING="transform .4s cubic-bezier(.2,.75,.2,1), opacity .3s ease";
 function switchProject(k){
-  setActive(target+k); pos=target; prevPos=pos;
-  renderDetail(active); $("detail").scrollTop=0;
-  try{ history.replaceState(null,"","#"+P[active].slug); }catch(_){}
+  if(animating) return;
+  const dir = k>0 ? 1 : -1;
+  if(reduce){ setActive(target+dir); pos=target; prevPos=pos; renderDetail(active); det.scrollTop=0; try{history.replaceState(null,"","#"+P[active].slug);}catch(_){} setContent(0); dragX=0; return; }
+  animating=true; hDrag=false;
+  const W=Math.max(320, Math.min(vw*0.7, 900));
+  const old=discs[active];
+  outIdx=active; outBase.x=old.outer.position.x; outBase.y=old.outer.position.y; outBase.z=old.outer.position.z; outBase.s=old.outer.scale.x;
+  outOff=0; lastOut=0; outOffT=-dir*(vw/ppu+outBase.s*2);
+  setActive(target+dir); pos=target; prevPos=pos;
+  activeSlide = dir*W*0.6/ppu; lastAS=activeSlide;
+  setContent(dragX || 0); dIn.getBoundingClientRect();
+  setContent(-dir*W, "transform .24s cubic-bezier(.5,0,.75,.3), opacity .24s ease");
+  setTimeout(()=>{
+    renderDetail(active); det.scrollTop=0;
+    try{ history.replaceState(null,"","#"+P[active].slug); }catch(_){}
+    setContent(dir*W*0.6); dIn.getBoundingClientRect();
+    setContent(0, "transform .6s cubic-bezier(.2,.75,.2,1), opacity .45s ease");
+    dragX=0;
+    setTimeout(()=>{ animating=false; }, 380);
+  }, 240);
 }
+/* touch: swipe sideways on the project page */
+det.style.touchAction="pan-y";
+let tStart=null;
+det.addEventListener("pointerdown", e=>{ if(e.pointerType==="mouse" || animating || !open) return; tStart={x:e.clientX,y:e.clientY,id:e.pointerId,t:performance.now()}; hDrag=false; });
+det.addEventListener("pointermove", e=>{
+  if(!tStart || e.pointerId!==tStart.id) return;
+  const dx=e.clientX-tStart.x, dy=e.clientY-tStart.y;
+  if(!hDrag){
+    if(Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*1.3){ hDrag=true; tStart.x=e.clientX; tStart.t=performance.now(); }
+    else if(Math.abs(dy)>10) tStart=null;
+    return;
+  }
+  dragX=dx; setContent(dragX);
+});
+function endH(){
+  if(!tStart) return;
+  const was=hDrag, dx=dragX, v=dx/Math.max(1,performance.now()-tStart.t);
+  tStart=null;
+  if(!was){ hDrag=false; return; }
+  if(Math.abs(dx) > Math.min(110, vw*0.22) || Math.abs(v)>0.6) switchProject(dx<0?1:-1);
+  else { hDrag=false; dragX=0; setContent(0, SPRING); }
+}
+det.addEventListener("pointerup", endH);
+det.addEventListener("pointercancel", endH);
+/* trackpad: sideways scroll on the project page */
+let wTimer=0, wLock=0;
+addEventListener("wheel", e=>{
+  if(!open) return;
+  if(Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  const now=performance.now();
+  if(now<wLock){ wLock=now+250; return; }
+  if(animating) return;
+  hDrag=true; dragX=Math.max(-vw, Math.min(vw, dragX - e.deltaX)); setContent(dragX);
+  clearTimeout(wTimer);
+  if(Math.abs(dragX) > Math.min(140, vw*0.18)){ wLock=now+450; switchProject(dragX<0?1:-1); return; }
+  wTimer=setTimeout(()=>{ hDrag=false; dragX=0; setContent(0, SPRING); }, 220);
+},{passive:false});
 $("back").addEventListener("click", closeProject);
 
 /* ---------- input ---------- */
@@ -531,6 +603,10 @@ function frame(now){
   const goal = open ? 1 : 0;
   openT = reduce ? goal : openT + (goal-openT)*(1-Math.exp(-dt*4.2));
   if(Math.abs(goal-openT)<0.001) openT=goal;
+  if(hDrag) activeSlide = dragX/ppu;
+  else activeSlide += (0-activeSlide)*(reduce ? 1 : 1-Math.exp(-dt*6));
+  if(outIdx>=0){ outOff += (outOffT-outOff)*(1-Math.exp(-dt*5)); if(Math.abs(outOffT-outOff)<0.05) outIdx=-1; }
+  if(openT>0){ const tf=getComputedStyle(dIn).transform; curTx = tf && tf!=="none" ? new DOMMatrixReadOnly(tf).m41 : 0; } else curTx=0;
   layout(dt);
   if(gtx>-900){ gx+=(gtx-gx)*0.18; gy+=(gty-gy)*0.18; glow.style.setProperty("--mx",gx.toFixed(1)+"px"); glow.style.setProperty("--my",gy.toFixed(1)+"px"); }
   renderer.render(scene, camera);
