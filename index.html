@@ -724,6 +724,30 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 
+/* ---------- recover the 3D view after leaving the page ---------- */
+let restoreTimer=0;
+function rebuildGPU(){
+  try{ scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.03).texture; }catch(_){}
+  discs.forEach(d=>{ if(d.mLabel.map) d.mLabel.map.needsUpdate=true; d.mLabel.needsUpdate=true; });
+  mShadow.map.needsUpdate=true;
+  resize();
+}
+canvas.addEventListener("webglcontextlost", e=>{
+  e.preventDefault();
+  clearTimeout(restoreTimer);
+  if(document.visibilityState==="visible") restoreTimer=setTimeout(()=>location.reload(), 2500);
+}, false);
+canvas.addEventListener("webglcontextrestored", ()=>{ clearTimeout(restoreTimer); rebuildGPU(); }, false);
+function checkGPU(){
+  if(document.visibilityState!=="visible") return;
+  const gl=renderer.getContext();
+  if(gl && gl.isContextLost && gl.isContextLost()){ clearTimeout(restoreTimer); restoreTimer=setTimeout(()=>{ if(gl.isContextLost()) location.reload(); }, 1200); }
+  else { last=0; resize(); }
+}
+document.addEventListener("visibilitychange", checkGPU);
+addEventListener("pageshow", e=>{ if(e.persisted) checkGPU(); });
+addEventListener("focus", checkGPU);
+
 /* ---------- start ---------- */
 addEventListener("resize", resize);
 resize();
