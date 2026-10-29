@@ -115,6 +115,20 @@ body.detail-open .back{opacity:1;pointer-events:auto;transition-delay:.3s}
 @keyframes ld-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.ld-disc{animation-duration:4s}}
 
+.d-gallery img{cursor:zoom-in}
+.lb{position:fixed;inset:0;z-index:40;perspective:1800px;touch-action:none;user-select:none;-webkit-user-select:none}
+.lb-bg{position:absolute;inset:0;background:rgba(247,242,236,.86);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);opacity:0}
+.lb-card{position:absolute;transform-style:preserve-3d;will-change:transform;cursor:grab}
+.lb-card.grab{cursor:grabbing}
+.lb-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;box-shadow:0 34px 70px -34px rgba(34,27,81,.6)}
+.lb-front{background:#EDE6DD}
+.lb-front img{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}
+.lb-back{transform:rotateY(180deg);background-color:var(--navy);color:var(--cream);display:flex;flex-direction:column;justify-content:space-between;gap:12px;padding:clamp(16px,5%,40px);
+  background-image:repeating-linear-gradient(62deg, transparent 0 38px, rgba(244,215,173,.09) 38px 39px), repeating-linear-gradient(-28deg, transparent 0 38px, rgba(244,215,173,.09) 38px 39px)}
+.lb-back .bk-top{display:flex;justify-content:space-between;gap:12px;font-family:var(--f-mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(244,215,173,.75)}
+.lb-back h3{margin:0;font-family:var(--f-head);font-variation-settings:"wdth" 118;font-weight:850;font-size:clamp(18px,3vw,30px);line-height:1.05;letter-spacing:.03em;text-transform:uppercase;color:#FFFFFF;text-wrap:balance}
+.lb-back .bk-sub{margin:6px 0 0;font-family:var(--f-sub);font-weight:600;font-size:14px}
+.lb-back .bk-cap{font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:rgba(244,215,173,.75)}
 @media (max-width:760px){
   .brand{top:calc(env(safe-area-inset-top,0px) + 16px)}
   .cv-link{top:calc(env(safe-area-inset-top,0px) + 12px)}
@@ -498,6 +512,7 @@ function endH(){
   const was=hDrag, dx=dragX, v=dx/Math.max(1,performance.now()-tStart.t);
   tStart=null;
   if(!was){ hDrag=false; return; }
+  lastSwipe=performance.now();
   if(Math.abs(dx) > Math.min(110, vw*0.22) || Math.abs(v)>0.6) switchProject(dx<0?1:-1);
   else { hDrag=false; dragX=0; setContent(0, SPRING); }
 }
@@ -591,6 +606,102 @@ document.addEventListener("keydown", e=>{
 const glow=$("glow"); let gx=-999, gy=-999, gtx=-999, gty=-999;
 addEventListener("pointermove", e=>{ if(e.pointerType!=="mouse") return; if(gx<-900){gx=e.clientX;gy=e.clientY;} gtx=e.clientX; gty=e.clientY; glow.classList.add("on"); });
 document.documentElement.addEventListener("mouseleave", ()=>glow.classList.remove("on"));
+
+/* ---------- image viewer ---------- */
+let lastSwipe=0;
+const lb=document.createElement("div"); lb.className="lb"; lb.hidden=true;
+lb.innerHTML=`<div class="lb-bg"></div><div class="lb-card" role="img"><div class="lb-face lb-front"><img alt=""></div><div class="lb-face lb-back"><div class="bk-top"><span class="bk-code"></span><span>Charl Landers</span></div><div><h3></h3><p class="bk-sub"></p></div><div class="bk-cap"></div></div></div>`;
+document.body.appendChild(lb);
+const lbBg=lb.querySelector(".lb-bg"), card=lb.querySelector(".lb-card"), lbImg=card.querySelector("img");
+const V={on:false,closing:false,src:null,t:0,rx:0,ry:0,ryT:0,z:1,zT:1,px:0,py:0,pxT:0,pyT:0,w:1,h:1,cx:0,cy:0,o:{x:0,y:0,s:1}};
+let lbRaf=0, lbLast=0, lbDrag=null, lbPinch=null; const ptrs=new Map();
+const clampZ=z=>Math.max(1,Math.min(5,z));
+function lbFit(){
+  const nw=V.src.naturalWidth||4, nh=V.src.naturalHeight||3, m=innerWidth<=760;
+  const k=Math.min(innerWidth*(m?0.92:0.84)/nw, innerHeight*(m?0.72:0.82)/nh);
+  V.w=nw*k; V.h=nh*k; V.cx=innerWidth/2; V.cy=innerHeight/2;
+  Object.assign(card.style,{width:V.w+"px",height:V.h+"px",left:(V.cx-V.w/2)+"px",top:(V.cy-V.h/2)+"px"});
+}
+function lbOrigin(){ const r=V.src.getBoundingClientRect(); V.o.x=r.left+r.width/2-V.cx; V.o.y=r.top+r.height/2-V.cy; V.o.s=Math.max(0.05,r.width/V.w); }
+function openLB(img){
+  if(V.on) return;
+  Object.assign(V,{on:true,closing:false,src:img,t:0,rx:0,ry:0,ryT:0,z:1,zT:1,px:0,py:0,pxT:0,pyT:0});
+  lbImg.src=img.src; lbImg.alt=img.alt;
+  const p=P[active], [main,sub]=split(p.title), yr=yearOf(p);
+  card.querySelector("h3").textContent=main; card.querySelector(".bk-sub").textContent=sub;
+  card.querySelector(".bk-code").textContent=code(active)+(yr?" · "+yr:"");
+  const fc=img.closest("figure"); card.querySelector(".bk-cap").textContent=fc && fc.querySelector("figcaption") ? fc.querySelector("figcaption").textContent : "";
+  card.setAttribute("aria-label", img.alt+". Drag to turn it over, scroll or pinch to zoom, click outside to close.");
+  lb.hidden=false; lbFit(); lbOrigin(); img.style.visibility="hidden";
+  if(!lbRaf){ lbLast=0; lbRaf=requestAnimationFrame(lbFrame); }
+}
+function closeLB(){ if(!V.on||V.closing) return; V.closing=true; V.ryT=Math.round(V.ry/360)*360; V.zT=1; lbOrigin(); }
+function zoomAt(nz, mx, my, b){
+  b=b||{z:V.z,px:V.px,py:V.py};
+  const lx=(mx-V.cx-b.px)/b.z, ly=(my-V.cy-b.py)/b.z;
+  V.z=V.zT=nz; V.px=V.pxT=mx-V.cx-nz*lx; V.py=V.pyT=my-V.cy-nz*ly;
+  const mxp=V.w*nz/2, myp=V.h*nz/2;
+  V.px=V.pxT=Math.max(-mxp,Math.min(mxp,V.px)); V.py=V.pyT=Math.max(-myp,Math.min(myp,V.py));
+}
+function lbFrame(now){
+  const dt=Math.min(0.05, lbLast ? (now-lbLast)/1000 : 1/60); lbLast=now;
+  const k=r=>reduce ? 1 : 1-Math.exp(-dt*r);
+  const goal=V.closing?0:1; V.t+=(goal-V.t)*k(V.closing?9:6.5); if(Math.abs(goal-V.t)<0.008) V.t=goal;
+  if(!lbDrag || V.closing){ V.ry+=(V.ryT-V.ry)*k(8); V.rx+=(0-V.rx)*k(8); }
+  if(!lbPinch){ V.z+=(V.zT-V.z)*k(10); if(V.zT<=1.001){ V.pxT=0; V.pyT=0; } V.px+=(V.pxT-V.px)*k(12); V.py+=(V.pyT-V.py)*k(12); }
+  const e=V.t<.5 ? 4*V.t*V.t*V.t : 1-Math.pow(-2*V.t+2,3)/2;
+  const s=V.o.s+(V.z-V.o.s)*e, tx=V.o.x*(1-e)+V.px*e, ty=V.o.y*(1-e)+V.py*e;
+  card.style.transform=`translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) scale(${s.toFixed(4)}) rotateX(${V.rx.toFixed(2)}deg) rotateY(${V.ry.toFixed(2)}deg)`;
+  lbBg.style.opacity=String(e);
+  if(V.closing && V.t===0){ lb.hidden=true; V.on=false; V.src.style.visibility=""; lbRaf=0; return; }
+  lbRaf=requestAnimationFrame(lbFrame);
+}
+lb.addEventListener("pointerdown", e=>{
+  if(!V.on||V.closing) return;
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  try{ lb.setPointerCapture(e.pointerId); }catch(_){}
+  if(ptrs.size===2){ const [a,b]=[...ptrs.values()]; lbPinch={d:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),z:V.z,px:V.px,py:V.py,mx:(a.x+b.x)/2,my:(a.y+b.y)/2}; lbDrag=null; return; }
+  lbDrag={x:e.clientX,y:e.clientY,rx:V.rx,ry:V.ry,px:V.px,py:V.py,onCard:!!(e.target.closest&&e.target.closest(".lb-card")),moved:0};
+  card.classList.add("grab");
+});
+lb.addEventListener("pointermove", e=>{
+  if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(lbPinch && ptrs.size>=2){ const [a,b]=[...ptrs.values()]; zoomAt(clampZ(lbPinch.z*Math.hypot(a.x-b.x,a.y-b.y)/lbPinch.d), lbPinch.mx, lbPinch.my, lbPinch); return; }
+  if(!lbDrag) return;
+  const dx=e.clientX-lbDrag.x, dy=e.clientY-lbDrag.y; lbDrag.moved=Math.max(lbDrag.moved,Math.abs(dx),Math.abs(dy));
+  if(V.zT>1.02){ V.px=V.pxT=lbDrag.px+dx; V.py=V.pyT=lbDrag.py+dy; }
+  else { V.ry=lbDrag.ry+dx*0.6; V.rx=lbDrag.rx-dy*0.4; }
+});
+function lbUp(e){
+  ptrs.delete(e.pointerId);
+  if(lbPinch){ if(ptrs.size<2){ lbPinch=null; if(V.zT<1.02) V.zT=1; } return; }
+  if(!lbDrag) return;
+  const d=lbDrag; lbDrag=null; card.classList.remove("grab");
+  if(d.moved<5 && !d.onCard){ closeLB(); return; }
+  const base=Math.round(d.ry/180)*180, delta=V.ry-base, n=Math.round((Math.abs(delta)+45)/180);
+  V.ryT=base+Math.sign(delta)*n*180;
+}
+lb.addEventListener("pointerup", lbUp);
+lb.addEventListener("pointercancel", lbUp);
+lb.addEventListener("wheel", e=>{
+  e.preventDefault(); e.stopPropagation();
+  if(!V.on||V.closing) return;
+  V.ryT=Math.round(V.ry/180)*180;
+  zoomAt(clampZ(V.z*Math.exp(-e.deltaY*(e.ctrlKey?0.01:0.0022))), e.clientX, e.clientY);
+},{passive:false});
+lb.addEventListener("dblclick", e=>{
+  if(!(e.target.closest&&e.target.closest(".lb-card"))) return;
+  if(V.zT>1.05){ V.zT=1; return; }
+  const lx=(e.clientX-V.cx-V.px)/V.z, ly=(e.clientY-V.cy-V.py)/V.z;
+  V.zT=2.5; V.pxT=Math.max(-V.w*1.25,Math.min(V.w*1.25,e.clientX-V.cx-2.5*lx)); V.pyT=Math.max(-V.h*1.25,Math.min(V.h*1.25,e.clientY-V.cy-2.5*ly));
+});
+addEventListener("keydown", e=>{ if(!V.on) return; e.stopPropagation(); if(e.key==="Escape") closeLB(); if(e.key.startsWith("Arrow")) e.preventDefault(); }, true);
+addEventListener("resize", ()=>{ if(V.on){ lbFit(); if(V.closing) lbOrigin(); } });
+dIn.addEventListener("click", e=>{
+  const im=e.target.closest && e.target.closest(".d-gallery img");
+  if(!im || animating || hDrag || performance.now()-lastSwipe<350) return;
+  openLB(im);
+});
 
 /* ---------- loop ---------- */
 let last=0;
